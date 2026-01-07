@@ -6,20 +6,206 @@ const UsersManagement = ({
   selectedYear,
   setColleges,
   colleges,
-  setSuccessMessage
+  setSuccessMessage,
+  setSelectedCollege,
+  setSelectedDepartment
 }) => {
+  // Determine if we're managing college-level or department-level users
+  const isDepartmentLevel = selectedDepartment && selectedYear;
+  const defaultRole = isDepartmentLevel ? 'teacher' : 'admin';
+
   const [editingUser, setEditingUser] = useState(null);
   const [userFormData, setUserFormData] = useState({
     username: '',
     password: '',
-    role: 'student'
+    role: defaultRole
   });
-
-  // Determine if we're managing college-level or department-level users
-  const isDepartmentLevel = selectedDepartment && selectedYear;
   const currentUsers = isDepartmentLevel
     ? selectedDepartment[selectedYear]?.users || []
     : selectedCollege?.users || [];
+
+  const [selectedCollegeForForm, setSelectedCollegeForForm] = useState(selectedCollege?.id || '');
+
+  if (!selectedCollege && !isDepartmentLevel) {
+    return (
+      <div className="space-y-4">
+        {/* User Form */}
+        <div className="card">
+          <div className="card-body">
+            <h2 className="h5 mb-4">Add New User</h2>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (!selectedCollegeForForm) {
+                alert('Please select a college first');
+                return;
+              }
+              const college = colleges.find(c => c.id === parseInt(selectedCollegeForForm));
+              if (!college) return;
+
+              const newUser = {
+                id: Date.now(),
+                username: userFormData.username,
+                role: userFormData.role,
+                status: 'active',
+                createdAt: new Date().toISOString().split('T')[0]
+              };
+
+              const updatedCollege = {
+                ...college,
+                users: [...college.users, newUser]
+              };
+
+              setColleges(colleges.map(c => c.id === college.id ? updatedCollege : c));
+              setSuccessMessage('User created successfully!');
+              setUserFormData({ username: '', password: '', role: 'admin' });
+              setTimeout(() => setSuccessMessage(''), 3000);
+            }} className="space-y-3">
+              <div className="row">
+                <div className="col-md-6 mb-3">
+                  <label htmlFor="collegeSelect" className="form-label">
+                    Select College
+                  </label>
+                  <select
+                    id="collegeSelect"
+                    value={selectedCollegeForForm}
+                    onChange={(e) => setSelectedCollegeForForm(e.target.value)}
+                    className="form-select"
+                    required
+                  >
+                    <option value="">Choose a college...</option>
+                    {colleges.map(college => (
+                      <option key={college.id} value={college.id}>
+                        {college.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-md-6 mb-3">
+                  <label htmlFor="username" className="form-label">
+                    Username
+                  </label>
+                  <input
+                    id="username"
+                    type="text"
+                    value={userFormData.username}
+                    onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
+                    className="form-control"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="col-md-6 mb-3">
+                  <label htmlFor="role" className="form-label">
+                    Role
+                  </label>
+                  <select
+                    id="role"
+                    value={userFormData.role}
+                    onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
+                    className="form-select"
+                    required
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="teacher">Teacher</option>
+                  </select>
+                </div>
+
+                <div className="col-md-6 mb-3">
+                  <label htmlFor="password" className="form-label">
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={userFormData.password}
+                    onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
+                    className="form-control"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="d-flex gap-2">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                >
+                  Add User
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* Users Table */}
+        <div className="card">
+          <div className="card-header">
+            <h2 className="h5 mb-0">All Users</h2>
+          </div>
+
+          <div className="table-responsive">
+            <table className="table table-hover mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>College</th>
+                  <th>Status</th>
+                  <th>Created At</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {colleges.flatMap(college =>
+                  college.users.map((user) => (
+                    <tr key={user.id}>
+                      <td className="fw-medium">{user.username}</td>
+                      <td>
+                        <span className={`badge ${user.role === 'admin' ? 'bg-danger' : user.role === 'teacher' ? 'bg-info' : 'bg-success'}`}>
+                          {user.role}
+                        </span>
+                      </td>
+                      <td>{college.name}</td>
+                      <td>
+                        <span className={`badge ${user.status === 'active' ? 'bg-success' : 'bg-secondary'}`}>
+                          {user.status}
+                        </span>
+                      </td>
+                      <td>{user.createdAt}</td>
+                      <td>
+                        <button
+                          onClick={() => {
+                            const updatedCollege = {
+                              ...college,
+                              users: college.users.map(u =>
+                                u.id === user.id
+                                  ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
+                                  : u
+                              )
+                            };
+                            setColleges(colleges.map(c => c.id === college.id ? updatedCollege : c));
+                            setSuccessMessage('User status updated successfully!');
+                            setTimeout(() => setSuccessMessage(''), 3000);
+                          }}
+                          className={`btn btn-sm ${user.status === 'active' ? 'btn-outline-warning' : 'btn-outline-success'} me-2`}
+                        >
+                          {user.status === 'active' ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleUserSubmit = (e) => {
     e.preventDefault();
@@ -52,6 +238,9 @@ const UsersManagement = ({
       };
 
       setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+      setSelectedCollege(updatedCollege);
+      // Update selectedDepartment to reflect the changes
+      setSelectedDepartment(updatedDepartment);
     } else {
       // Update college-level user
       const updatedCollege = {
@@ -62,11 +251,12 @@ const UsersManagement = ({
       };
 
       setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+      setSelectedCollege(updatedCollege);
     }
 
     setSuccessMessage(editingUser ? 'User updated successfully!' : 'User created successfully!');
     setEditingUser(null);
-    setUserFormData({ username: '', password: '', role: 'student' });
+    setUserFormData({ username: '', password: '', role: defaultRole });
     setTimeout(() => setSuccessMessage(''), 3000);
   };
 
@@ -98,12 +288,15 @@ const UsersManagement = ({
         };
 
         setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+        setSelectedCollege(updatedCollege);
+        setSelectedDepartment(updatedDepartment);
       } else {
         const updatedCollege = {
           ...selectedCollege,
           users: selectedCollege.users.filter(u => u.id !== userId)
         };
         setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+        setSelectedCollege(updatedCollege);
       }
 
       setSuccessMessage('User deleted successfully!');
@@ -133,6 +326,8 @@ const UsersManagement = ({
       };
 
       setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+      setSelectedCollege(updatedCollege);
+      setSelectedDepartment(updatedDepartment);
     } else {
       const updatedCollege = {
         ...selectedCollege,
@@ -143,6 +338,7 @@ const UsersManagement = ({
         )
       };
       setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+      setSelectedCollege(updatedCollege);
     }
 
     setSuccessMessage('User status updated successfully!');
@@ -187,7 +383,6 @@ const UsersManagement = ({
                 >
                   {isDepartmentLevel ? (
                     <>
-                      <option value="student">Student</option>
                       <option value="teacher">Teacher</option>
                     </>
                   ) : (
@@ -224,7 +419,7 @@ const UsersManagement = ({
                   type="button"
                   onClick={() => {
                     setEditingUser(null);
-                    setUserFormData({ username: '', password: '', role: 'student' });
+                    setUserFormData({ username: '', password: '', role: defaultRole });
                   }}
                   className="btn btn-secondary"
                 >

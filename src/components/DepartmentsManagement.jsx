@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const DepartmentsManagement = ({ selectedCollege, setColleges, colleges, setSuccessMessage, setSelectedDepartment, setSelectedYear, setActiveTab }) => {
+const DepartmentsManagement = ({ selectedCollege, setColleges, colleges, setSuccessMessage, setSelectedDepartment, setSelectedYear, setActiveTab, setSelectedCollege }) => {
   const [editingDepartment, setEditingDepartment] = useState(null);
   const [departmentFormData, setDepartmentFormData] = useState({
     name: '',
@@ -28,6 +28,7 @@ const DepartmentsManagement = ({ selectedCollege, setColleges, colleges, setSucc
     };
 
     setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+    setSelectedCollege(updatedCollege);
     setSuccessMessage(editingDepartment ? 'Department updated successfully!' : 'Department created successfully!');
     setEditingDepartment(null);
     setDepartmentFormData({ name: '', code: '', description: '' });
@@ -50,6 +51,7 @@ const DepartmentsManagement = ({ selectedCollege, setColleges, colleges, setSucc
         departments: selectedCollege.departments.filter(d => d.id !== departmentId)
       };
       setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+      setSelectedCollege(updatedCollege);
       setSuccessMessage('Department deleted successfully!');
       setTimeout(() => setSuccessMessage(''), 3000);
     }
