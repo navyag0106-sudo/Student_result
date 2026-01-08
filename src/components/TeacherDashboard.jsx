@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import { collection, addDoc, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { db } from '../firebase';
+import AddStudentModal from './AddStudentModal';
+import UploadGradesTab from './UploadGradesTab';
+import ManageGradesTab from './ManageGradesTab';
+import AddSubjectTab from './AddSubjectTab';
 
 const TeacherDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('upload');
@@ -10,14 +16,37 @@ const TeacherDashboard = ({ user, onLogout }) => {
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
-    studentId: '',
-    subject: '',
-    score: '',
-    date: new Date().toISOString().split('T')[0]
+    regNo: '',
+    year: '',
+    semester: '',
+    marks: {},
+    present: false
   });
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
   const [editingGrade, setEditingGrade] = useState(null);
+  const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+  const [studentForm, setStudentForm] = useState({
+    name: '',
+    regNo: '',
+    year: '',
+    dept: '',
+    dob: ''
+  });
+  const [studentErrors, setStudentErrors] = useState({});
+  const [newSubject, setNewSubject] = useState('');
+  const [subjectForm, setSubjectForm] = useState({
+    name: '',
+    code: '',
+    year: '',
+    semester: ''
+  });
+  const [subjectErrors, setSubjectErrors] = useState({});
+  const [subjectEntries, setSubjectEntries] = useState([]);
+  const [fetchedSubjects, setFetchedSubjects] = useState([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [subjectsError, setSubjectsError] = useState('');
+  const [filterRegNo, setFilterRegNo] = useState('');
 
   useEffect(() => {
     // Mock data - in real app, this would be API calls
@@ -42,11 +71,11 @@ const TeacherDashboard = ({ user, onLogout }) => {
       ];
 
       const mockGrades = [
-        { id: 1, studentId: 'STU001', studentName: 'John Smith', subject: 'Mathematics', score: 85, date: '2024-01-15' },
-        { id: 2, studentId: 'STU002', studentName: 'Emily Johnson', subject: 'Physics', score: 78, date: '2024-01-20' },
-        { id: 3, studentId: 'STU003', studentName: 'Michael Brown', subject: 'Chemistry', score: 92, date: '2024-01-25' },
-        { id: 4, studentId: 'STU004', studentName: 'Sarah Davis', subject: 'Biology', score: 88, date: '2024-02-01' },
-        { id: 5, studentId: 'STU005', studentName: 'James Wilson', subject: 'English', score: 90, date: '2024-02-05' },
+        { id: 1, studentId: 'STU001', year: 'Year I', semester: 'Sem 1' },
+        { id: 2, studentId: 'STU002', year: 'Year I', semester: 'Sem 2' },
+        { id: 3, studentId: 'STU003', year: 'Year II', semester: 'Sem 3' },
+        { id: 4, studentId: 'STU004', year: 'Year II', semester: 'Sem 4' },
+        { id: 5, studentId: 'STU005', year: 'Year I', semester: 'Sem 1' },
       ];
 
       setStudents(mockStudents);
@@ -56,25 +85,83 @@ const TeacherDashboard = ({ user, onLogout }) => {
     }, 1000);
   }, []);
 
+  // Load subjects from Firestore for selected year & semester in Upload tab
+  useEffect(() => {
+    const loadSubjectsForSelection = async () => {
+      if (!formData.year || !formData.semester) {
+        setFetchedSubjects([]);
+        setSubjectsError('');
+        return;
+      }
+
+      setSubjectsLoading(true);
+      setSubjectsError('');
+
+      try {
+        const snapshot = await getDocs(collection(db, 'SUBJECT'));
+        const matched = [];
+
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          if (Array.isArray(data.subjects)) {
+            data.subjects.forEach((subj) => {
+              if (subj.year === formData.year && subj.semester === formData.semester) {
+                matched.push(subj);
+              }
+            });
+          }
+        });
+
+        setFetchedSubjects(matched);
+      } catch (err) {
+        console.error('Error fetching subjects from Firestore:', err);
+        setSubjectsError('Failed to load subjects from database.');
+        setFetchedSubjects([]);
+      } finally {
+        setSubjectsLoading(false);
+      }
+    };
+
+    loadSubjectsForSelection();
+  }, [formData.year, formData.semester]);
+
   const validateForm = () => {
     const newErrors = {};
-    
-    if (!formData.studentId) {
-      newErrors.studentId = 'Please select a student';
+
+    if (!formData.regNo.trim()) {
+      newErrors.regNo = 'Please enter a registration number';
     }
-    
-    if (!formData.subject) {
-      newErrors.subject = 'Please select a subject';
+
+    if (!formData.year) {
+      newErrors.year = 'Please select a year';
     }
-    
-    if (!formData.score) {
-      newErrors.score = 'Please enter a score';
-    } else if (isNaN(formData.score) || formData.score < 0 || formData.score > 100) {
-      newErrors.score = 'Score must be between 0 and 100';
+
+    if (!formData.semester) {
+      newErrors.semester = 'Please select a semester';
     }
-    
+
+    // Validate marks for each subject
+    fetchedSubjects.forEach((subj) => {
+      const mark = formData.marks[subj.name];
+      if (mark === undefined || mark === '') {
+        newErrors[`marks_${subj.name}`] = `Please enter marks for ${subj.name}`;
+      } else if (isNaN(mark) || mark < 0 || mark > 100) {
+        newErrors[`marks_${subj.name}`] = `Marks for ${subj.name} must be a number between 0 and 100`;
+      }
+    });
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  const calculateGrade = (marks, present) => {
+    if (!present) return 'UA';
+    if (marks >= 90) return 'O';
+    if (marks >= 80) return 'A+';
+    if (marks >= 70) return 'A';
+    if (marks >= 60) return 'B+';
+    if (marks >= 50) return 'B';
+    return 'U';
   };
 
   const handleSubmit = async (e) => {
@@ -84,74 +171,86 @@ const TeacherDashboard = ({ user, onLogout }) => {
       return;
     }
 
+    const gradeEntries = fetchedSubjects.map((subj) => ({
+      id: editingGrade ? editingGrade.id + subj.name : Date.now() + subj.name,
+      studentId: formData.regNo.trim(),
+      year: formData.year,
+      semester: formData.semester,
+      subject: subj.name,
+      marks: parseInt(formData.marks[subj.name]),
+      present: formData.present[subj.name] || false,
+      grade: calculateGrade(parseInt(formData.marks[subj.name]), formData.present[subj.name] || false)
+    }));
+
     try {
-      const gradeData = {
-        studentId: formData.studentId,
-        studentName: students.find(s => s.id === formData.studentId)?.name,
-        subject: formData.subject,
-        score: parseInt(formData.score),
-        date: formData.date
-      };
-
-      if (editingGrade) {
-        // Update existing grade in Firebase
-        const gradeRef = doc(db, 'grades', editingGrade.id);
-        await updateDoc(gradeRef, gradeData);
-
-        // Update local state
-        setGrades(grades.map(g => g.id === editingGrade.id ? { ...gradeData, id: editingGrade.id } : g));
-        setSuccessMessage('Grade updated successfully!');
-        setEditingGrade(null);
-      } else {
-        // Add new grade to Firebase
-        const docRef = await addDoc(collection(db, 'grades'), gradeData);
-
-        // Update local state with the new document ID
-        const newGrade = { ...gradeData, id: docRef.id };
-        setGrades([...grades, newGrade]);
-        setSuccessMessage('Grade uploaded successfully!');
+      // Save each grade entry to Firestore
+      for (const entry of gradeEntries) {
+        await addDoc(collection(db, 'GRADES'), entry);
       }
 
-      setFormData({
-        studentId: '',
-        subject: '',
-        score: '',
-        date: new Date().toISOString().split('T')[0]
-      });
-
-      setTimeout(() => setSuccessMessage(''), 3000);
-    } catch (error) {
-      console.error('Error saving grade:', error);
-      alert('Error saving grade. Please try again.');
+      // Update local state
+      setGrades([...grades, ...gradeEntries]);
+      setSuccessMessage('Grades uploaded successfully!');
+    } catch (err) {
+      console.error('Error saving grades:', err);
+      setSuccessMessage('Failed to save grades. Please try again.');
     }
+
+    setFormData({
+      regNo: '',
+      year: '',
+      semester: '',
+      marks: {},
+      present: {}
+    });
+
+    setTimeout(() => setSuccessMessage(''), 3000);
   };
 
   const handleEdit = (grade) => {
     setEditingGrade(grade);
     setFormData({
-      studentId: grade.studentId,
-      subject: grade.subject,
-      score: grade.score.toString(),
-      date: grade.date
+      regNo: grade.studentId || '',
+      year: grade.year || '',
+      semester: grade.semester || '',
+      marks: { [grade.subject]: grade.marks || '' },
+      present: { [grade.subject]: grade.present || false }
     });
     setActiveTab('upload');
   };
 
   const handleDelete = async (gradeId) => {
     if (window.confirm('Are you sure you want to delete this grade?')) {
-      try {
-        // Delete from Firebase
-        const gradeRef = doc(db, 'grades', gradeId);
-        await deleteDoc(gradeRef);
+      setGrades(grades.filter(g => g.id !== gradeId));
+      setSuccessMessage('Grade deleted successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    }
+  };
 
-        // Update local state
-        setGrades(grades.filter(g => g.id !== gradeId));
-        setSuccessMessage('Grade deleted successfully!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-      } catch (error) {
-        console.error('Error deleting grade:', error);
-        alert('Error deleting grade. Please try again.');
-      }
+  const handlePresentToggle = async (grade) => {
+    const newPresent = !grade.present;
+    const newGrade = calculateGrade(grade.marks, newPresent);
+
+    try {
+      // Update in Firestore
+      await updateDoc(doc(db, 'GRADES', grade.id), {
+        present: newPresent,
+        grade: newGrade
+      });
+
+      // Update local state
+      setGrades(grades.map(g =>
+        g.id === grade.id
+          ? { ...g, present: newPresent, grade: newGrade }
+          : g
+      ));
+
+      setSuccessMessage('Present status updated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('Error updating present status:', err);
+      setSuccessMessage('Failed to update present status. Please try again.');
+      setTimeout(() => setSuccessMessage(''), 3000);
     }
   };
 
@@ -160,6 +259,147 @@ const TeacherDashboard = ({ user, onLogout }) => {
     setFormData({ ...formData, [name]: value });
     if (errors[name]) {
       setErrors({ ...errors, [name]: '' });
+    }
+  };
+
+  const handleMarksChange = (subjectName, value) => {
+    const updatedMarks = { ...formData.marks, [subjectName]: value };
+    setFormData({ ...formData, marks: updatedMarks });
+    if (errors[`marks_${subjectName}`]) {
+      setErrors({ ...errors, [`marks_${subjectName}`]: '' });
+    }
+  };
+
+  const handlePresentChange = (subjectName, value) => {
+    const updatedPresent = { ...formData.present, [subjectName]: value };
+    setFormData({ ...formData, present: updatedPresent });
+  };
+
+  const validateStudentForm = () => {
+    const newErrors = {};
+    if (!studentForm.name.trim()) newErrors.name = 'Name is required';
+    if (!studentForm.regNo.trim()) newErrors.regNo = 'Registration number is required';
+    if (!studentForm.year.trim()) newErrors.year = 'Year is required';
+    if (!studentForm.dept.trim()) newErrors.dept = 'Department is required';
+    if (!studentForm.dob) newErrors.dob = 'Date of birth is required';
+    setStudentErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleStudentSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateStudentForm()) return;
+
+    const newStudent = {
+      id: studentForm.regNo || Date.now().toString(),
+      name: studentForm.name.trim(),
+      regNo: studentForm.regNo.trim(),
+      year: studentForm.year.trim(),
+      dept: studentForm.dept.trim(),
+      dob: studentForm.dob,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      // Save to Firestore STUDENT collection
+      await addDoc(collection(db, 'STUDENT'), newStudent);
+
+      // Keep local UI list in sync
+      setStudents([...students, { id: newStudent.id, name: newStudent.name }]);
+      setSuccessMessage('Student saved to database successfully!');
+    } catch (err) {
+      console.error('Error saving student:', err);
+      setSuccessMessage('Failed to save student. Please try again.');
+    }
+
+    setTimeout(() => setSuccessMessage(''), 3000);
+
+    setStudentForm({
+      name: '',
+      regNo: '',
+      year: '',
+      dept: '',
+      dob: ''
+    });
+    setStudentErrors({});
+    setIsStudentModalOpen(false);
+  };
+
+  const validateSubjectForm = () => {
+    const newErrors = {};
+    if (!subjectForm.name.trim()) newErrors.name = 'Subject name is required';
+    if (!subjectForm.code.trim()) newErrors.code = 'Subject code is required';
+    if (!subjectForm.year.trim()) newErrors.year = 'Year is required';
+    if (!subjectForm.semester.trim()) newErrors.semester = 'Semester is required';
+    setSubjectErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleAddSubjectRow = (e) => {
+    e.preventDefault();
+    if (!validateSubjectForm()) return;
+
+    const trimmed = subjectForm.name.trim();
+
+    // Add subject to local table
+    setSubjectEntries([
+      ...subjectEntries,
+      {
+        id: Date.now(),
+        name: trimmed,
+        code: subjectForm.code.trim(),
+        year: subjectForm.year,
+        semester: subjectForm.semester
+      }
+    ]);
+
+    // Also keep dropdown subjects list updated
+    if (trimmed && !subjects.includes(trimmed)) {
+      setSubjects([...subjects, trimmed]);
+    }
+
+    // Clear only the subject name to easily add another,
+    // keep year/semester selected
+    setSubjectForm({
+      ...subjectForm,
+      name: ''
+    });
+    setSubjectErrors({});
+  };
+
+  const handleSubjectSubmit = async (e) => {
+    e.preventDefault();
+
+    if (subjectEntries.length === 0) {
+      setSuccessMessage('No subjects to submit.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+      return;
+    }
+
+    try {
+      // Store the whole table (all subjects) in one Firestore document
+      await addDoc(collection(db, 'SUBJECT'), {
+        subjects: subjectEntries.map(({ id, ...rest }) => rest),
+        createdAt: new Date().toISOString()
+      });
+
+      setSuccessMessage('All subjects saved to database successfully!');
+
+      // Clear the local table so it disappears from the UI
+      setSubjectEntries([]);
+
+      // Optionally reset the subject form (including year/semester)
+      setSubjectForm({
+        name: '',
+        year: '',
+        semester: ''
+      });
+      setSubjectErrors({});
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('Error saving subjects table:', err);
+      setSuccessMessage('Failed to save subjects table. Please try again.');
+      setTimeout(() => setSuccessMessage(''), 3000);
     }
   };
 
@@ -178,6 +418,14 @@ const TeacherDashboard = ({ user, onLogout }) => {
 
   return (
     <div className="min-vh-100 bg-light">
+      <AddStudentModal
+        isOpen={isStudentModalOpen}
+        onClose={() => setIsStudentModalOpen(false)}
+        onSave={handleStudentSubmit}
+        students={students}
+        setStudents={setStudents}
+        setSuccessMessage={setSuccessMessage}
+      />
       {/* Header */}
       <header className="bg-white shadow-sm border-bottom">
         <div className="container">
@@ -185,6 +433,13 @@ const TeacherDashboard = ({ user, onLogout }) => {
             <h1 className="h5 mb-0">Teacher Dashboard</h1>
             <div className="d-flex align-items-center gap-3">
               <span className="text-muted">Welcome, {user.username}</span>
+              <button
+                type="button"
+                className="btn btn-outline-primary btn-sm"
+                onClick={() => setIsStudentModalOpen(true)}
+              >
+                Add Student
+              </button>
               <button
                 onClick={onLogout}
                 className="btn btn-danger btn-sm"
@@ -200,6 +455,14 @@ const TeacherDashboard = ({ user, onLogout }) => {
         {/* Navigation Tabs */}
         <div className="mb-4">
           <ul className="nav nav-tabs">
+            <li className="nav-item">
+              <button
+                onClick={() => setActiveTab('addSubject')}
+                className={`nav-link ${activeTab === 'addSubject' ? 'active' : ''}`}
+              >
+                Add Subject
+              </button>
+            </li>
             <li className="nav-item">
               <button
                 onClick={() => setActiveTab('upload')}
@@ -228,192 +491,49 @@ const TeacherDashboard = ({ user, onLogout }) => {
 
         {/* Upload/Edit Grade Form */}
         {activeTab === 'upload' && (
-          <div className="card">
-            <div className="card-body">
-              <h2 className="h5 mb-4">
-                {editingGrade ? 'Edit Grade' : 'Upload New Grade'}
-              </h2>
-              
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label htmlFor="studentId" className="form-label">
-                      Student
-                    </label>
-                    <select
-                      id="studentId"
-                      name="studentId"
-                      value={formData.studentId}
-                      onChange={handleInputChange}
-                      className={`form-select ${errors.studentId ? 'is-invalid' : ''}`}
-                    >
-                      <option value="">Select a student</option>
-                      {students.map(student => (
-                        <option key={student.id} value={student.id}>
-                          {student.name} ({student.id})
-                        </option>
-                      ))}
-                    </select>
-                    {errors.studentId && (
-                      <div className="invalid-feedback">{errors.studentId}</div>
-                    )}
-                  </div>
-
-                  <div className="col-md-6 mb-3">
-                    <label htmlFor="subject" className="form-label">
-                      Subject
-                    </label>
-                    <select
-                      id="subject"
-                      name="subject"
-                      value={formData.subject}
-                      onChange={handleInputChange}
-                      className={`form-select ${errors.subject ? 'is-invalid' : ''}`}
-                    >
-                      <option value="">Select a subject</option>
-                      {subjects.map(subject => (
-                        <option key={subject} value={subject}>
-                          {subject}
-                        </option>
-                      ))}
-                    </select>
-                    {errors.subject && (
-                      <div className="invalid-feedback">{errors.subject}</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label htmlFor="score" className="form-label">
-                      Score (0-100)
-                    </label>
-                    <input
-                      id="score"
-                      name="score"
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={formData.score}
-                      onChange={handleInputChange}
-                      className={`form-control ${errors.score ? 'is-invalid' : ''}`}
-                      placeholder="Enter score"
-                    />
-                    {errors.score && (
-                      <div className="invalid-feedback">{errors.score}</div>
-                    )}
-                  </div>
-
-                  <div className="col-md-6 mb-3">
-                    <label htmlFor="date" className="form-label">
-                      Date
-                    </label>
-                    <input
-                      id="date"
-                      name="date"
-                      type="date"
-                      value={formData.date}
-                      onChange={handleInputChange}
-                      className="form-control"
-                    />
-                  </div>
-                </div>
-
-                <div className="d-flex gap-2">
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                  >
-                    {editingGrade ? 'Update Grade' : 'Upload Grade'}
-                  </button>
-                  {editingGrade && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingGrade(null);
-                        setFormData({
-                          studentId: '',
-                          subject: '',
-                          score: '',
-                          date: new Date().toISOString().split('T')[0]
-                        });
-                      }}
-                      className="btn btn-secondary"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </form>
-            </div>
-          </div>
+          <UploadGradesTab
+            editingGrade={editingGrade}
+            setEditingGrade={setEditingGrade}
+            formData={formData}
+            setFormData={setFormData}
+            errors={errors}
+            setErrors={setErrors}
+            fetchedSubjects={fetchedSubjects}
+            subjectsLoading={subjectsLoading}
+            subjectsError={subjectsError}
+            handleSubmit={handleSubmit}
+            handleInputChange={handleInputChange}
+            handleMarksChange={handleMarksChange}
+            handlePresentChange={handlePresentChange}
+            calculateGrade={calculateGrade}
+          />
         )}
 
         {/* Editable Grades Table */}
         {activeTab === 'edit' && (
-          <div className="card">
-            <div className="card-header">
-              <h2 className="h5 mb-0">Manage Grades</h2>
-            </div>
-            
-            {grades.length === 0 ? (
-              <div className="card-body text-center">
-                <p className="text-muted mb-0">No grades found</p>
-              </div>
-            ) : (
-              <div className="table-responsive">
-                <table className="table table-hover mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th>Student</th>
-                      <th>Subject</th>
-                      <th>Score</th>
-                      <th>Date</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {grades.map((grade) => (
-                      <tr key={grade.id}>
-                        <td>
-                          <div>
-                            <div className="fw-medium">{grade.studentName}</div>
-                            <small className="text-muted">{grade.studentId}</small>
-                          </div>
-                        </td>
-                        <td>{grade.subject}</td>
-                        <td>
-                          <span className={`badge ${
-                            grade.score >= 90 ? 'bg-success' :
-                            grade.score >= 80 ? 'bg-primary' :
-                            grade.score >= 70 ? 'bg-warning' :
-                            'bg-danger'
-                          }`}>
-                            {grade.score}
-                          </span>
-                        </td>
-                        <td>{new Date(grade.date).toLocaleDateString()}</td>
-                        <td>
-                          <button
-                            onClick={() => handleEdit(grade)}
-                            className="btn btn-sm btn-outline-primary me-2"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(grade.id)}
-                            className="btn btn-sm btn-outline-danger"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <ManageGradesTab
+            grades={grades}
+            setGrades={setGrades}
+            setSuccessMessage={setSuccessMessage}
+            handleEdit={handleEdit}
+            handleDelete={handleDelete}
+            filterRegNo={filterRegNo}
+            setFilterRegNo={setFilterRegNo}
+          />
+        )}
+
+        {/* Add Subject Tab */}
+        {activeTab === 'addSubject' && (
+          <AddSubjectTab
+            subjectForm={subjectForm}
+            setSubjectForm={setSubjectForm}
+            subjectErrors={subjectErrors}
+            setSubjectErrors={setSubjectErrors}
+            subjectEntries={subjectEntries}
+            setSubjectEntries={setSubjectEntries}
+            handleAddSubjectRow={handleAddSubjectRow}
+            handleSubjectSubmit={handleSubjectSubmit}
+          />
         )}
       </main>
     </div>

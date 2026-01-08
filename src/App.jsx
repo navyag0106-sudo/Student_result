@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './components/LoginPage';
 import StudentDashboard from './components/StudentDashboard';
 import TeacherDashboard from './components/TeacherDashboard';
@@ -85,7 +86,42 @@ function App() {
 
   return (
     <div className="App">
-      {user ? renderDashboard() : <LoginPage onLogin={handleLogin} />}
+      <Router>
+        <Routes>
+          <Route
+            path="/"
+            element={user ? renderDashboard() : <LoginPage onLogin={handleLogin} />}
+          />
+          <Route
+            path="/teacher"
+            element={
+              <TeacherDashboard
+                user={user || { username: 'Teacher', role: 'teacher' }}
+                onLogout={handleLogout}
+              />
+            }
+          />
+          <Route
+            path="/student"
+            element={
+              <StudentDashboard
+                user={user || { username: 'Student', role: 'student' }}
+                onLogout={handleLogout}
+              />
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminDashboard
+                user={user || { username: 'Admin', role: 'admin' }}
+                onLogout={handleLogout}
+              />
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
     </div>
   );
 }
