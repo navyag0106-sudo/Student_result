@@ -1,11 +1,23 @@
 import { useState } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db, auth, signInWithEmailAndPassword } from '../firebase';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { auth, signInWithEmailAndPassword } from '../firebase';
+
 
 const LoginPage = ({ onLogin }) => {
   const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
 
+  const isValidPassword = (userRecord, inputPassword) => {
+    // Check if the user record has a password field and compare
+    if (userRecord.password) {
+      return userRecord.password === inputPassword;
+    }
+    // If no password is stored, return false to prevent login
+    // This ensures that only users with proper credentials can log in
+    return false;
+  };
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -14,34 +26,99 @@ const LoginPage = ({ onLogin }) => {
       return;
     }
 
+    // Hardcoded admin credentials check
+    if (credentials.email === 'admin123@gmail.com' && credentials.password === 'Password') {
+      const adminUser = {
+        email: 'admin123@gmail.com',
+        username: 'admin123',
+        role: 'admin',
+        status: 'active',
+        canManageResults: true,
+        createdAt: new Date().toISOString().split('T')[0]
+      };
+      onLogin(adminUser);
+      return;
+    }
+
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
-      const user = userCredential.user;
+      // First, try Firebase Authentication
+      await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
       
-      // For demo purposes, assign admin role to authenticated users
-      // In production, you would fetch user roles from Firestore or custom claims
+      // If Firebase auth succeeds, check if the user exists in the COLLEGE collection
+      const collegesSnapshot = await getDocs(collection(db, 'colleges'));
+      let foundUser = null;
+      let userCollegeData = null;
+      let userCollegeId = null;
+      let userDepartment = null;
+      let userYear = null;
+      
+      for (const collegeDoc of collegesSnapshot.docs) {
+        const collegeData = collegeDoc.data();
+        
+        // Check for user in college-level users
+        if (collegeData.users && Array.isArray(collegeData.users)) {
+          const userInCollege = collegeData.users.find(u => u.username === credentials.email || u.username === credentials.email.split('@')[0]);
+          if (userInCollege && isValidPassword(userInCollege, credentials.password)) {
+            foundUser = userInCollege;
+            userCollegeData = collegeData;
+            userCollegeId = collegeDoc.id;
+            break;
+          }
+        }
+        
+        // Check for user in department-level users
+        if (collegeData.departments && Array.isArray(collegeData.departments)) {
+          for (const dept of collegeData.departments) {
+            if (dept.year1 && dept.year1.users && Array.isArray(dept.year1.users)) {
+              const userInDept = dept.year1.users.find(u => u.username === credentials.email || u.username === credentials.email.split('@')[0]);
+              if (userInDept && isValidPassword(userInDept, credentials.password)) {
+                foundUser = userInDept;
+                userCollegeData = collegeData;
+                userCollegeId = collegeDoc.id;
+                userDepartment = dept;
+                userYear = 'year1';
+                break;
+              }
+            }
+            
+            if (dept.year2 && dept.year2.users && Array.isArray(dept.year2.users)) {
+              const userInDept = dept.year2.users.find(u => u.username === credentials.email || u.username === credentials.email.split('@')[0]);
+              if (userInDept && isValidPassword(userInDept, credentials.password)) {
+                foundUser = userInDept;
+                userCollegeData = collegeData;
+                userCollegeId = collegeDoc.id;
+                userDepartment = dept;
+                userYear = 'year2';
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      if (!foundUser) {
+        setError('User not found in the system. Please contact administrator.');
+        return;
+      }
+      
+      // Create user data object based on found user
       const userData = {
-        email: user.email,
-        username: user.email.split('@')[0], // Extract username from email
-        role: 'admin', // Default to admin for demo
-        uid: user.uid
+        email: credentials.email,
+        username: foundUser.username,
+        ...foundUser,
+        college: userCollegeData,
+        collegeId: userCollegeId,
+        department: userDepartment,
+        year: userYear
       };
       
       onLogin(userData);
     } catch (error) {
-      console.error('Firebase auth error:', error);
-      switch (error.code) {
-        case 'auth/user-not-found':
-          setError('User not found. Please check your email.');
-          break;
-        case 'auth/wrong-password':
-          setError('Incorrect password. Please try again.');
-          break;
-        case 'auth/invalid-email':
-          setError('Invalid email format.');
-          break;
-        default:
-          setError('Login failed. Please try again.');
+      console.error('Login error:', error);
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        setError('Invalid email or password. Please try again.');
+      } else {
+        setError('Login failed. Please try again.');
       }
     }
   };
@@ -101,7 +178,7 @@ const LoginPage = ({ onLogin }) => {
           <div className="mt-4 text-center text-muted small">
             <p className="mb-1">Firebase Authentication:</p>
             <p className="mb-1">Use any valid Firebase email/password</p>
-            <p className="mb-0">All authenticated users redirect to admin dashboard</p>
+            <p className="mb-0">Login credentials are checked against the COLLEGE collection</p>
           </div>
         </div>
       </div>

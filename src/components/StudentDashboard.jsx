@@ -7,6 +7,8 @@ const StudentDashboard = ({ user, onLogout }) => {
   const [currentView, setCurrentView] = useState('landing');
   const [regNo, setRegNo] = useState('');
   const [dob, setDob] = useState('');
+  const [year, setYear] = useState('');
+  const [semester, setSemester] = useState('');
   const [collegeName, setCollegeName] = useState('K S R Institute for Engineering And Technology');
   const [grades, setGrades] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -33,22 +35,6 @@ const StudentDashboard = ({ user, onLogout }) => {
     };
 
     fetchCollegeName();
-
-    // Mock data - in real app, this would be an API call
-    setTimeout(() => {
-      const mockGrades = [
-        { id: 1, subject: 'Mathematics', score: 85, date: '2024-01-15', semester: 'Fall 2024' },
-        { id: 2, subject: 'Physics', score: 78, date: '2024-01-20', semester: 'Fall 2024' },
-        { id: 3, subject: 'Chemistry', score: 92, date: '2024-01-25', semester: 'Fall 2024' },
-        { id: 4, subject: 'Biology', score: 88, date: '2024-02-01', semester: 'Fall 2024' },
-        { id: 5, subject: 'English', score: 90, date: '2024-02-05', semester: 'Fall 2024' },
-        { id: 6, subject: 'History', score: 82, date: '2024-02-10', semester: 'Fall 2024' },
-        { id: 7, subject: 'Computer Science', score: 95, date: '2024-02-15', semester: 'Fall 2024' },
-        { id: 8, subject: 'Economics', score: 76, date: '2024-02-20', semester: 'Fall 2024' },
-      ];
-      setGrades(mockGrades);
-      setLoading(false);
-    }, 1000);
   }, []);
 
   const indexOfLastGrade = currentPage * gradesPerPage;
@@ -59,15 +45,18 @@ const StudentDashboard = ({ user, onLogout }) => {
   const downloadGradeReport = () => {
     const reportData = {
       student: user?.username || 'Student',
+      registrationNumber: regNo,
+      dateOfBirth: dob,
       grades: grades,
-      average: grades.reduce((acc, grade) => acc + grade.score, 0) / grades.length,
+      totalGrades: grades.length,
+      averageScore: grades.length > 0 ? grades.reduce((acc, grade) => acc + (grade.score || 0), 0) / grades.length : 0,
       generatedAt: new Date().toISOString(),
     };
 
     const dataStr = JSON.stringify(reportData, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
 
-    const exportFileDefaultName = `grade-report-${user?.username || 'Student'}-${new Date().toISOString().split('T')[0]}.json`;
+    const exportFileDefaultName = `grade-report-${regNo || 'Student'}-${new Date().toISOString().split('T')[0]}.json`;
 
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
@@ -105,26 +94,29 @@ const StudentDashboard = ({ user, onLogout }) => {
                   <tr>
                     <th>Subject</th>
                     <th>Score</th>
-                    <th>Date</th>
                     <th>Grade</th>
+                    <th>Year</th>
+                    <th>Semester</th>
                   </tr>
                 </thead>
                 <tbody>
                   {currentGrades.map((grade) => (
                     <tr key={grade.id}>
-                      <td className="fw-medium">{grade.subject}</td>
-                      <td>{grade.score}</td>
-                      <td>{new Date(grade.date).toLocaleDateString()}</td>
+                      <td className="fw-medium">{grade.subject || 'N/A'}</td>
+                      <td>{grade.score || 'N/A'}</td>
                       <td>
                         <span className={`badge ${
-                          grade.score >= 90 ? 'bg-success' :
-                          grade.score >= 80 ? 'bg-primary' :
-                          grade.score >= 70 ? 'bg-warning' :
+                          (typeof grade.score === 'number' && grade.score >= 90) || grade.grade === 'O' || grade.grade === 'A+' ? 'bg-success' :
+                          (typeof grade.score === 'number' && grade.score >= 80) || grade.grade === 'A' ? 'bg-primary' :
+                          (typeof grade.score === 'number' && grade.score >= 70) || grade.grade === 'B+' ? 'bg-warning' :
                           'bg-danger'
                         }`}>
-                          {grade.score >= 90 ? 'A' : grade.score >= 80 ? 'B' : grade.score >= 70 ? 'C' : 'D'}
+                          {grade.grade || (typeof grade.score === 'number' && 
+                            (grade.score >= 90 ? 'O' : grade.score >= 80 ? 'A+' : grade.score >= 70 ? 'A' : grade.score >= 60 ? 'B+' : grade.score >= 50 ? 'B' : 'U')) || 'N/A'}
                         </span>
                       </td>
+                      <td>{grade.year || 'N/A'}</td>
+                      <td>{grade.semester || 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -196,19 +188,44 @@ const StudentDashboard = ({ user, onLogout }) => {
 
   // Credentials input page
   if (currentView === 'credentials') {
-    const handleViewResults = () => {
-      const newErrors = {};
-      if (!regNo.trim()) {
-        newErrors.regNo = 'Registration Number is required';
+    const handleViewResults = async () => {
+    const newErrors = {};
+    if (!regNo.trim()) {
+      newErrors.regNo = 'Registration Number is required';
+    }
+    if (!dob) {
+      newErrors.dob = 'Date of Birth is required';
+    }
+    setErrors(newErrors);
+    
+    if (Object.keys(newErrors).length === 0) {
+      setLoading(true);
+      try {
+        // First verify student exists in STUDENT collection
+        const response = await fetch('/api/students/validate-grade-access', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ regNo, dob, year, semester }),
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          setGrades(result.data.grades);
+          setCurrentView('results');
+        } else {
+          setErrors({ general: result.message || 'Failed to fetch results' });
+        }
+      } catch (error) {
+        console.error('Error fetching grades:', error);
+        setErrors({ general: 'Network error. Please try again.' });
+      } finally {
+        setLoading(false);
       }
-      if (!dob) {
-        newErrors.dob = 'Date of Birth is required';
-      }
-      setErrors(newErrors);
-      if (Object.keys(newErrors).length === 0) {
-        setCurrentView('results');
-      }
-    };
+    }
+  };
 
     return (
       <div className="min-vh-100 bg-light d-flex align-items-center justify-content-center">
@@ -218,6 +235,11 @@ const StudentDashboard = ({ user, onLogout }) => {
               <h2 className="h4 mb-3">View Results</h2>
             </div>
             <form>
+              {errors.general && (
+                <div className="alert alert-danger mb-3" role="alert">
+                  {errors.general}
+                </div>
+              )}
               <div className="mb-3">
                 <label htmlFor="regNo" className="form-label">Registration Number (REG NO) *</label>
                 <input
@@ -228,6 +250,7 @@ const StudentDashboard = ({ user, onLogout }) => {
                   onChange={(e) => setRegNo(e.target.value)}
                   placeholder="Enter your REG NO"
                   required
+                  disabled={loading}
                 />
                 {errors.regNo && <div className="invalid-feedback">{errors.regNo}</div>}
               </div>
@@ -240,21 +263,72 @@ const StudentDashboard = ({ user, onLogout }) => {
                   value={dob}
                   onChange={(e) => setDob(e.target.value)}
                   required
+                  disabled={loading}
                 />
                 {errors.dob && <div className="invalid-feedback">{errors.dob}</div>}
               </div>
+              
+              {/* Year and Semester optional fields */}
+              <div className="row mb-3">
+                <div className="col-md-6">
+                  <label htmlFor="year" className="form-label">Year (Optional)</label>
+                  <select
+                    id="year"
+                    className="form-select"
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                    disabled={loading}
+                  >
+                    <option value="">Select Year</option>
+                    <option value="Year I">Year I</option>
+                    <option value="Year II">Year II</option>
+                    <option value="Year III">Year III</option>
+                    <option value="Year IV">Year IV</option>
+                  </select>
+                </div>
+                <div className="col-md-6">
+                  <label htmlFor="semester" className="form-label">Semester (Optional)</label>
+                  <select
+                    id="semester"
+                    className="form-select"
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    disabled={loading}
+                  >
+                    <option value="">Select Sem</option>
+                    <option value="Sem 1">Sem 1</option>
+                    <option value="Sem 2">Sem 2</option>
+                    <option value="Sem 3">Sem 3</option>
+                    <option value="Sem 4">Sem 4</option>
+                    <option value="Sem 5">Sem 5</option>
+                    <option value="Sem 6">Sem 6</option>
+                    <option value="Sem 7">Sem 7</option>
+                    <option value="Sem 8">Sem 8</option>
+                  </select>
+                </div>
+              </div>
+              
               <div className="d-grid gap-2">
                 <button
                   type="button"
                   className="btn btn-primary"
                   onClick={handleViewResults}
+                  disabled={loading}
                 >
-                  View Results
+                  {loading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                      Loading...
+                    </>
+                  ) : (
+                    'View Results'
+                  )}
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => setCurrentView('landing')}
+                  disabled={loading}
                 >
                   Back
                 </button>

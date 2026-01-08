@@ -6,7 +6,6 @@ const UploadGradesTab = ({
   formData,
   setFormData,
   errors,
-  setErrors,
   fetchedSubjects,
   subjectsLoading,
   subjectsError,
@@ -14,7 +13,8 @@ const UploadGradesTab = ({
   handleInputChange,
   handleMarksChange,
   handlePresentChange,
-  calculateGrade
+  calculateGrade,
+  currentUserInfo
 }) => {
 
   return (
@@ -56,6 +56,7 @@ const UploadGradesTab = ({
                 value={formData.year}
                 onChange={handleInputChange}
                 className={`form-select ${errors.year ? 'is-invalid' : ''}`}
+                disabled={!!currentUserInfo?.year} // Disable if user's year is already set
               >
                 <option value="">Select year</option>
                 <option value="Year I">Year I</option>
@@ -63,6 +64,11 @@ const UploadGradesTab = ({
               </select>
               {errors.year && (
                 <div className="invalid-feedback">{errors.year}</div>
+              )}
+              {currentUserInfo?.year && (
+                <div className="form-text text-muted small">
+                  Auto-populated: {currentUserInfo.year === 'year1' ? 'Year I' : 'Year II'}
+                </div>
               )}
             </div>
 

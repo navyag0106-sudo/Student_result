@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { collection, addDoc, getDocs, updateDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
 import AddStudentModal from './AddStudentModal';
 import UploadGradesTab from './UploadGradesTab';
 import ManageGradesTab from './ManageGradesTab';
 import AddSubjectTab from './AddSubjectTab';
+import AddStudentTab from './AddStudentTab';
 
 const TeacherDashboard = ({ user, onLogout }) => {
-  const [activeTab, setActiveTab] = useState('upload');
+  const [activeTab, setActiveTab] = useState('addStudent');
   const [grades, setGrades] = useState([]);
-  const [students, setStudents] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserInfo, setCurrentUserInfo] = useState(null);
+
   const [formData, setFormData] = useState({
     regNo: '',
     year: '',
@@ -25,16 +25,10 @@ const TeacherDashboard = ({ user, onLogout }) => {
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
   const [editingGrade, setEditingGrade] = useState(null);
-  const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
-  const [studentForm, setStudentForm] = useState({
-    name: '',
-    regNo: '',
-    year: '',
-    dept: '',
-    dob: ''
-  });
-  const [studentErrors, setStudentErrors] = useState({});
-  const [newSubject, setNewSubject] = useState('');
+
+
+
+
   const [subjectForm, setSubjectForm] = useState({
     name: '',
     code: '',
@@ -49,16 +43,81 @@ const TeacherDashboard = ({ user, onLogout }) => {
   const [filterRegNo, setFilterRegNo] = useState('');
 
   useEffect(() => {
-    // Mock data - in real app, this would be API calls
-    setTimeout(() => {
-      const mockStudents = [
-        { id: 'STU001', name: 'John Smith' },
-        { id: 'STU002', name: 'Emily Johnson' },
-        { id: 'STU003', name: 'Michael Brown' },
-        { id: 'STU004', name: 'Sarah Davis' },
-        { id: 'STU005', name: 'James Wilson' },
-      ];
+    const fetchUserData = async () => {
+      try {
+        // Fetch user information from COLLEGE collection based on email
+        const collegesSnapshot = await getDocs(collection(db, 'colleges'));
+        
+        for (const collegeDoc of collegesSnapshot.docs) {
+          const collegeData = collegeDoc.data();
+          
+          // Check for user in college-level users
+          if (collegeData.users && Array.isArray(collegeData.users)) {
+            const foundUser = collegeData.users.find(u => u.username === user.username);
+            if (foundUser) {
+              setCurrentUserInfo({
+                ...foundUser,
+                college: collegeData,
+                collegeId: collegeDoc.id
+              });
+              break;
+            }
+          }
+          
+          // Check for user in department-level users
+          if (collegeData.departments && Array.isArray(collegeData.departments)) {
+            for (const dept of collegeData.departments) {
+              if (dept.year1 && dept.year1.users && Array.isArray(dept.year1.users)) {
+                const foundUser = dept.year1.users.find(u => u.username === user.username);
+                if (foundUser) {
+                  setCurrentUserInfo({
+                    ...foundUser,
+                    college: collegeData,
+                    collegeId: collegeDoc.id,
+                    department: dept,
+                    year: 'year1'
+                  });
+                  // Set the year in formData to match the user's year
+                  setFormData(prev => ({
+                    ...prev,
+                    year: 'Year I'
+                  }));
+                  break;
+                }
+              }
+              
+              if (dept.year2 && dept.year2.users && Array.isArray(dept.year2.users)) {
+                const foundUser = dept.year2.users.find(u => u.username === user.username);
+                if (foundUser) {
+                  setCurrentUserInfo({
+                    ...foundUser,
+                    college: collegeData,
+                    collegeId: collegeDoc.id,
+                    department: dept,
+                    year: 'year2'
+                  });
+                  // Set the year in formData to match the user's year
+                  setFormData(prev => ({
+                    ...prev,
+                    year: 'Year II'
+                  }));
+                  break;
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+    
+    fetchUserData();
+  }, [user]);
 
+  useEffect(() => {
+    // Fetch initial data - this can remain as mock data or be replaced with actual API calls
+    const loadData = async () => {
       const mockSubjects = [
         'Mathematics',
         'Physics',
@@ -78,11 +137,12 @@ const TeacherDashboard = ({ user, onLogout }) => {
         { id: 5, studentId: 'STU005', year: 'Year I', semester: 'Sem 1' },
       ];
 
-      setStudents(mockStudents);
       setSubjects(mockSubjects);
       setGrades(mockGrades);
       setLoading(false);
-    }, 1000);
+    };
+    
+    loadData();
   }, []);
 
   // Load subjects from Firestore for selected year & semester in Upload tab
@@ -227,32 +287,7 @@ const TeacherDashboard = ({ user, onLogout }) => {
     }
   };
 
-  const handlePresentToggle = async (grade) => {
-    const newPresent = !grade.present;
-    const newGrade = calculateGrade(grade.marks, newPresent);
 
-    try {
-      // Update in Firestore
-      await updateDoc(doc(db, 'GRADES', grade.id), {
-        present: newPresent,
-        grade: newGrade
-      });
-
-      // Update local state
-      setGrades(grades.map(g =>
-        g.id === grade.id
-          ? { ...g, present: newPresent, grade: newGrade }
-          : g
-      ));
-
-      setSuccessMessage('Present status updated successfully!');
-      setTimeout(() => setSuccessMessage(''), 3000);
-    } catch (err) {
-      console.error('Error updating present status:', err);
-      setSuccessMessage('Failed to update present status. Please try again.');
-      setTimeout(() => setSuccessMessage(''), 3000);
-    }
-  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -275,55 +310,7 @@ const TeacherDashboard = ({ user, onLogout }) => {
     setFormData({ ...formData, present: updatedPresent });
   };
 
-  const validateStudentForm = () => {
-    const newErrors = {};
-    if (!studentForm.name.trim()) newErrors.name = 'Name is required';
-    if (!studentForm.regNo.trim()) newErrors.regNo = 'Registration number is required';
-    if (!studentForm.year.trim()) newErrors.year = 'Year is required';
-    if (!studentForm.dept.trim()) newErrors.dept = 'Department is required';
-    if (!studentForm.dob) newErrors.dob = 'Date of birth is required';
-    setStudentErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
 
-  const handleStudentSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateStudentForm()) return;
-
-    const newStudent = {
-      id: studentForm.regNo || Date.now().toString(),
-      name: studentForm.name.trim(),
-      regNo: studentForm.regNo.trim(),
-      year: studentForm.year.trim(),
-      dept: studentForm.dept.trim(),
-      dob: studentForm.dob,
-      createdAt: new Date().toISOString()
-    };
-
-    try {
-      // Save to Firestore STUDENT collection
-      await addDoc(collection(db, 'STUDENT'), newStudent);
-
-      // Keep local UI list in sync
-      setStudents([...students, { id: newStudent.id, name: newStudent.name }]);
-      setSuccessMessage('Student saved to database successfully!');
-    } catch (err) {
-      console.error('Error saving student:', err);
-      setSuccessMessage('Failed to save student. Please try again.');
-    }
-
-    setTimeout(() => setSuccessMessage(''), 3000);
-
-    setStudentForm({
-      name: '',
-      regNo: '',
-      year: '',
-      dept: '',
-      dob: ''
-    });
-    setStudentErrors({});
-    setIsStudentModalOpen(false);
-  };
 
   const validateSubjectForm = () => {
     const newErrors = {};
@@ -379,7 +366,7 @@ const TeacherDashboard = ({ user, onLogout }) => {
     try {
       // Store the whole table (all subjects) in one Firestore document
       await addDoc(collection(db, 'SUBJECT'), {
-        subjects: subjectEntries.map(({ id, ...rest }) => rest),
+        subjects: subjectEntries.map((entry) => ({ name: entry.name, code: entry.code, year: entry.year, semester: entry.semester })),
         createdAt: new Date().toISOString()
       });
 
@@ -418,25 +405,31 @@ const TeacherDashboard = ({ user, onLogout }) => {
 
   return (
     <div className="min-vh-100 bg-light">
-      <AddStudentModal
-        isOpen={isStudentModalOpen}
-        onClose={() => setIsStudentModalOpen(false)}
-        onSave={handleStudentSubmit}
-        students={students}
-        setStudents={setStudents}
-        setSuccessMessage={setSuccessMessage}
-      />
+
       {/* Header */}
       <header className="bg-white shadow-sm border-bottom">
         <div className="container">
           <div className="d-flex justify-content-between align-items-center py-3">
             <h1 className="h5 mb-0">Teacher Dashboard</h1>
             <div className="d-flex align-items-center gap-3">
-              <span className="text-muted">Welcome, {user.username}</span>
+              <div>
+                <span className="text-muted">Welcome, {user.username}</span>
+                {currentUserInfo && (
+                  <div className="text-muted small">
+                    Role: {currentUserInfo.role} | {currentUserInfo.department ? `Department: ${currentUserInfo.department.name || 'N/A'}` : 'College Level'}
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 className="btn btn-outline-primary btn-sm"
-                onClick={() => setIsStudentModalOpen(true)}
+                onClick={() => {
+                  // Check if user has permission to add students
+                  if (currentUserInfo?.canManageResults || currentUserInfo?.role === 'head' || currentUserInfo?.role === 'admin') {
+                    setActiveTab('addStudent');
+                  }
+                }}
+                disabled={!(currentUserInfo?.canManageResults || currentUserInfo?.role === 'head' || currentUserInfo?.role === 'admin')}
               >
                 Add Student
               </button>
@@ -455,6 +448,14 @@ const TeacherDashboard = ({ user, onLogout }) => {
         {/* Navigation Tabs */}
         <div className="mb-4">
           <ul className="nav nav-tabs">
+            <li className="nav-item">
+              <button
+                onClick={() => setActiveTab('addStudent')}
+                className={`nav-link ${activeTab === 'addStudent' ? 'active' : ''}`}
+              >
+                Add Student
+              </button>
+            </li>
             <li className="nav-item">
               <button
                 onClick={() => setActiveTab('addSubject')}
@@ -497,7 +498,6 @@ const TeacherDashboard = ({ user, onLogout }) => {
             formData={formData}
             setFormData={setFormData}
             errors={errors}
-            setErrors={setErrors}
             fetchedSubjects={fetchedSubjects}
             subjectsLoading={subjectsLoading}
             subjectsError={subjectsError}
@@ -506,6 +506,7 @@ const TeacherDashboard = ({ user, onLogout }) => {
             handleMarksChange={handleMarksChange}
             handlePresentChange={handlePresentChange}
             calculateGrade={calculateGrade}
+            currentUserInfo={currentUserInfo}
           />
         )}
 
@@ -533,6 +534,16 @@ const TeacherDashboard = ({ user, onLogout }) => {
             setSubjectEntries={setSubjectEntries}
             handleAddSubjectRow={handleAddSubjectRow}
             handleSubjectSubmit={handleSubjectSubmit}
+            setSuccessMessage={setSuccessMessage}
+            currentUserInfo={currentUserInfo}
+          />
+        )}
+
+        {/* Add Student Tab */}
+        {activeTab === 'addStudent' && (
+          <AddStudentTab
+            setSuccessMessage={setSuccessMessage}
+            currentUserInfo={currentUserInfo}
           />
         )}
       </main>

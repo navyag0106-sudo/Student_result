@@ -1,11 +1,14 @@
 import { useState } from 'react';
+import { addDoc, collection } from 'firebase/firestore';
+import { db } from '../firebase';
 
-const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSuccessMessage }) => {
+const AddStudentModal = ({ isOpen, onClose, students, setStudents, setSuccessMessage, currentUserInfo }) => {
   const [studentForm, setStudentForm] = useState({
     name: '',
     regNo: '',
-    year: '',
-    dept: '',
+    email: '', // Add email field
+    year: currentUserInfo?.year ? (currentUserInfo.year === 'year1' ? 'Year I' : 'Year II') : '',
+    dept: currentUserInfo?.department?.name || '',
     dob: ''
   });
   const [studentErrors, setStudentErrors] = useState({});
@@ -14,6 +17,7 @@ const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSu
     const newErrors = {};
     if (!studentForm.name.trim()) newErrors.name = 'Name is required';
     if (!studentForm.regNo.trim()) newErrors.regNo = 'Registration number is required';
+    if (!studentForm.email.trim()) newErrors.email = 'Email is required';
     if (!studentForm.year.trim()) newErrors.year = 'Year is required';
     if (!studentForm.dept.trim()) newErrors.dept = 'Department is required';
     if (!studentForm.dob) newErrors.dob = 'Date of birth is required';
@@ -29,6 +33,7 @@ const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSu
       id: studentForm.regNo || Date.now().toString(),
       name: studentForm.name.trim(),
       regNo: studentForm.regNo.trim(),
+      email: studentForm.email.trim(),
       year: studentForm.year.trim(),
       dept: studentForm.dept.trim(),
       dob: studentForm.dob,
@@ -52,8 +57,9 @@ const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSu
     setStudentForm({
       name: '',
       regNo: '',
-      year: '',
-      dept: '',
+      email: '',
+      year: currentUserInfo?.year ? (currentUserInfo.year === 'year1' ? 'Year I' : 'Year II') : '',
+      dept: currentUserInfo?.department?.name || '',
       dob: ''
     });
     setStudentErrors({});
@@ -113,6 +119,20 @@ const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSu
                   {studentErrors.regNo && <div className="invalid-feedback">{studentErrors.regNo}</div>}
                 </div>
                 <div className="col-md-6">
+                  <label className="form-label">Email</label>
+                  <input
+                    type="email"
+                    className={`form-control ${studentErrors.email ? 'is-invalid' : ''}`}
+                    value={studentForm.email}
+                    onChange={(e) => {
+                      setStudentForm({ ...studentForm, email: e.target.value });
+                      if (studentErrors.email) setStudentErrors({ ...studentErrors, email: '' });
+                    }}
+                    placeholder="e.g., student@college.edu"
+                  />
+                  {studentErrors.email && <div className="invalid-feedback">{studentErrors.email}</div>}
+                </div>
+                <div className="col-md-6">
                   <label className="form-label">Year</label>
                   <select
                     className={`form-select ${studentErrors.year ? 'is-invalid' : ''}`}
@@ -121,6 +141,7 @@ const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSu
                       setStudentForm({ ...studentForm, year: e.target.value });
                       if (studentErrors.year) setStudentErrors({ ...studentErrors, year: '' });
                     }}
+                    disabled={!!currentUserInfo?.year} // Disable if user's year is already set
                   >
                     <option value="">Select year</option>
                     <option value="Year I">Year I</option>
@@ -128,6 +149,11 @@ const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSu
                   </select>
                   {studentErrors.year && (
                     <div className="text-danger small mt-1">{studentErrors.year}</div>
+                  )}
+                  {currentUserInfo?.year && (
+                    <div className="form-text text-muted small">
+                      Auto-populated from your profile: {currentUserInfo.year === 'year1' ? 'Year I' : 'Year II'}
+                    </div>
                   )}
                 </div>
                 <div className="col-md-6">
@@ -141,8 +167,14 @@ const AddStudentModal = ({ isOpen, onClose, onSave, students, setStudents, setSu
                       if (studentErrors.dept) setStudentErrors({ ...studentErrors, dept: '' });
                     }}
                     placeholder="e.g., Computer Science"
+                    disabled={!!currentUserInfo?.department?.name} // Disable if user's department is already set
                   />
                   {studentErrors.dept && <div className="invalid-feedback">{studentErrors.dept}</div>}
+                  {currentUserInfo?.department?.name && (
+                    <div className="form-text text-muted small">
+                      Auto-populated from your profile: {currentUserInfo.department.name}
+                    </div>
+                  )}
                 </div>
                 <div className="col-md-6">
                   <label className="form-label">DOB</label>
