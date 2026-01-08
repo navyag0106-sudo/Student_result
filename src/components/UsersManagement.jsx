@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const UsersManagement = ({
   selectedCollege,
@@ -35,7 +37,7 @@ const UsersManagement = ({
           <div className="card-body">
             <h2 className="h5 mb-4">Add New User</h2>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
               if (!selectedCollegeForForm) {
                 alert('Please select a college first');
@@ -58,10 +60,17 @@ const UsersManagement = ({
                 users: [...college.users, newUser]
               };
 
-              setColleges(colleges.map(c => c.id === college.id ? updatedCollege : c));
-              setSuccessMessage('User created successfully!');
-              setUserFormData({ username: '', password: '', role: 'head' });
-              setTimeout(() => setSuccessMessage(''), 3000);
+              try {
+                const collegeRef = doc(db, 'colleges', college.id);
+                await updateDoc(collegeRef, { users: updatedCollege.users });
+                setColleges(colleges.map(c => c.id === college.id ? updatedCollege : c));
+                setSuccessMessage('User created successfully!');
+                setUserFormData({ username: '', password: '', role: 'head' });
+                setTimeout(() => setSuccessMessage(''), 3000);
+              } catch (error) {
+                console.error('Error saving user to Firebase:', error);
+                alert('Error saving user to Firebase. Please try again.');
+              }
             }} className="space-y-3">
               <div className="row">
                 <div className="col-md-6 mb-3">
@@ -180,18 +189,25 @@ const UsersManagement = ({
                       <td>{user.createdAt}</td>
                       <td>
                         <button
-                          onClick={() => {
-                            const updatedCollege = {
-                              ...college,
-                              users: college.users.map(u =>
-                                u.id === user.id
-                                  ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
-                                  : u
-                              )
-                            };
-                            setColleges(colleges.map(c => c.id === college.id ? updatedCollege : c));
-                            setSuccessMessage('User status updated successfully!');
-                            setTimeout(() => setSuccessMessage(''), 3000);
+                          onClick={async () => {
+                            try {
+                              const updatedCollege = {
+                                ...college,
+                                users: college.users.map(u =>
+                                  u.id === user.id
+                                    ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
+                                    : u
+                                )
+                              };
+                              const collegeRef = doc(db, 'colleges', college.id);
+                              await updateDoc(collegeRef, { users: updatedCollege.users });
+                              setColleges(colleges.map(c => c.id === college.id ? updatedCollege : c));
+                              setSuccessMessage('User status updated successfully!');
+                              setTimeout(() => setSuccessMessage(''), 3000);
+                            } catch (error) {
+                              console.error('Error updating user status in Firebase:', error);
+                              alert('Error updating user status in Firebase. Please try again.');
+                            }
                           }}
                           className={`btn btn-sm ${user.status === 'active' ? 'btn-outline-warning' : 'btn-outline-success'} me-2`}
                         >
@@ -209,7 +225,7 @@ const UsersManagement = ({
     );
   }
 
-  const handleUserSubmit = (e) => {
+  const handleUserSubmit = async (e) => {
     e.preventDefault();
 
     const newUser = {
@@ -221,46 +237,55 @@ const UsersManagement = ({
       canManageResults: userFormData.canManageResults
     };
 
-    if (isDepartmentLevel) {
-      // Update department-level user
-      const updatedDepartment = {
-        ...selectedDepartment,
-        [selectedYear]: {
-          ...selectedDepartment[selectedYear],
+    try {
+      if (isDepartmentLevel) {
+        // Update department-level user
+        const updatedDepartment = {
+          ...selectedDepartment,
+          [selectedYear]: {
+            ...selectedDepartment[selectedYear],
+            users: editingUser
+              ? selectedDepartment[selectedYear].users.map(u => u.id === editingUser.id ? newUser : u)
+              : [...selectedDepartment[selectedYear].users, newUser]
+          }
+        };
+
+        const updatedCollege = {
+          ...selectedCollege,
+          departments: selectedCollege.departments.map(d =>
+            d.id === selectedDepartment.id ? updatedDepartment : d
+          )
+        };
+
+        const collegeRef = doc(db, 'colleges', selectedCollege.id);
+        await updateDoc(collegeRef, { departments: updatedCollege.departments });
+        setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+        setSelectedCollege(updatedCollege);
+        // Update selectedDepartment to reflect the changes
+        setSelectedDepartment(updatedDepartment);
+      } else {
+        // Update college-level user
+        const updatedCollege = {
+          ...selectedCollege,
           users: editingUser
-            ? selectedDepartment[selectedYear].users.map(u => u.id === editingUser.id ? newUser : u)
-            : [...selectedDepartment[selectedYear].users, newUser]
-        }
-      };
+            ? selectedCollege.users.map(u => u.id === editingUser.id ? newUser : u)
+            : [...selectedCollege.users, newUser]
+        };
 
-      const updatedCollege = {
-        ...selectedCollege,
-        departments: selectedCollege.departments.map(d =>
-          d.id === selectedDepartment.id ? updatedDepartment : d
-        )
-      };
+        const collegeRef = doc(db, 'colleges', selectedCollege.id);
+        await updateDoc(collegeRef, { users: updatedCollege.users });
+        setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+        setSelectedCollege(updatedCollege);
+      }
 
-      setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
-      setSelectedCollege(updatedCollege);
-      // Update selectedDepartment to reflect the changes
-      setSelectedDepartment(updatedDepartment);
-    } else {
-      // Update college-level user
-      const updatedCollege = {
-        ...selectedCollege,
-        users: editingUser
-          ? selectedCollege.users.map(u => u.id === editingUser.id ? newUser : u)
-          : [...selectedCollege.users, newUser]
-      };
-
-      setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
-      setSelectedCollege(updatedCollege);
+      setSuccessMessage(editingUser ? 'User updated successfully!' : 'User created successfully!');
+      setEditingUser(null);
+      setUserFormData({ username: '', password: '', role: defaultRole, canManageResults: defaultRole === 'head' });
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Error saving user to Firebase:', error);
+      alert('Error saving user to Firebase. Please try again.');
     }
-
-    setSuccessMessage(editingUser ? 'User updated successfully!' : 'User created successfully!');
-    setEditingUser(null);
-    setUserFormData({ username: '', password: '', role: defaultRole, canManageResults: defaultRole === 'head' });
-    setTimeout(() => setSuccessMessage(''), 3000);
   };
 
   const handleEditUser = (user) => {
@@ -273,14 +298,62 @@ const UsersManagement = ({
     });
   };
 
-  const handleDeleteUser = (userId) => {
+  const handleDeleteUser = async (userId) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
+      try {
+        if (isDepartmentLevel) {
+          const updatedDepartment = {
+            ...selectedDepartment,
+            [selectedYear]: {
+              ...selectedDepartment[selectedYear],
+              users: selectedDepartment[selectedYear].users.filter(u => u.id !== userId)
+            }
+          };
+
+          const updatedCollege = {
+            ...selectedCollege,
+            departments: selectedCollege.departments.map(d =>
+              d.id === selectedDepartment.id ? updatedDepartment : d
+            )
+          };
+
+          const collegeRef = doc(db, 'colleges', selectedCollege.id);
+          await updateDoc(collegeRef, { departments: updatedCollege.departments });
+          setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+          setSelectedCollege(updatedCollege);
+          setSelectedDepartment(updatedDepartment);
+        } else {
+          const updatedCollege = {
+            ...selectedCollege,
+            users: selectedCollege.users.filter(u => u.id !== userId)
+          };
+          const collegeRef = doc(db, 'colleges', selectedCollege.id);
+          await updateDoc(collegeRef, { users: updatedCollege.users });
+          setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+          setSelectedCollege(updatedCollege);
+        }
+
+        setSuccessMessage('User deleted successfully!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } catch (error) {
+        console.error('Error deleting user from Firebase:', error);
+        alert('Error deleting user from Firebase. Please try again.');
+      }
+    }
+  };
+
+  const toggleUserStatus = async (userId) => {
+    try {
       if (isDepartmentLevel) {
         const updatedDepartment = {
           ...selectedDepartment,
           [selectedYear]: {
             ...selectedDepartment[selectedYear],
-            users: selectedDepartment[selectedYear].users.filter(u => u.id !== userId)
+            users: selectedDepartment[selectedYear].users.map(u =>
+              u.id === userId
+                ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
+                : u
+            )
           }
         };
 
@@ -291,62 +364,32 @@ const UsersManagement = ({
           )
         };
 
+        const collegeRef = doc(db, 'colleges', selectedCollege.id);
+        await updateDoc(collegeRef, { departments: updatedCollege.departments });
         setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
         setSelectedCollege(updatedCollege);
         setSelectedDepartment(updatedDepartment);
       } else {
         const updatedCollege = {
           ...selectedCollege,
-          users: selectedCollege.users.filter(u => u.id !== userId)
-        };
-        setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
-        setSelectedCollege(updatedCollege);
-      }
-
-      setSuccessMessage('User deleted successfully!');
-      setTimeout(() => setSuccessMessage(''), 3000);
-    }
-  };
-
-  const toggleUserStatus = (userId) => {
-    if (isDepartmentLevel) {
-      const updatedDepartment = {
-        ...selectedDepartment,
-        [selectedYear]: {
-          ...selectedDepartment[selectedYear],
-          users: selectedDepartment[selectedYear].users.map(u =>
+          users: selectedCollege.users.map(u =>
             u.id === userId
               ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
               : u
           )
-        }
-      };
+        };
+        const collegeRef = doc(db, 'colleges', selectedCollege.id);
+        await updateDoc(collegeRef, { users: updatedCollege.users });
+        setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
+        setSelectedCollege(updatedCollege);
+      }
 
-      const updatedCollege = {
-        ...selectedCollege,
-        departments: selectedCollege.departments.map(d =>
-          d.id === selectedDepartment.id ? updatedDepartment : d
-        )
-      };
-
-      setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
-      setSelectedCollege(updatedCollege);
-      setSelectedDepartment(updatedDepartment);
-    } else {
-      const updatedCollege = {
-        ...selectedCollege,
-        users: selectedCollege.users.map(u =>
-          u.id === userId
-            ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
-            : u
-        )
-      };
-      setColleges(colleges.map(c => c.id === selectedCollege.id ? updatedCollege : c));
-      setSelectedCollege(updatedCollege);
+      setSuccessMessage('User status updated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Error updating user status in Firebase:', error);
+      alert('Error updating user status in Firebase. Please try again.');
     }
-
-    setSuccessMessage('User status updated successfully!');
-    setTimeout(() => setSuccessMessage(''), 3000);
   };
 
   return (
